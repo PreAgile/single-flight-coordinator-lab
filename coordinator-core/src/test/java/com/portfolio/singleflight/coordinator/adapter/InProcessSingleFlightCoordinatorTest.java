@@ -58,6 +58,22 @@ import static org.awaitility.Awaitility.await;
  *   <li><b>관측성:</b> {@code getInflightState()}는 진행 중인 작업의
  *       key/시작시각/매달린 수/hostId를 스냅샷으로 노출한다.</li>
  * </ol>
+ *
+ * <h2>그룹별 단일 관심사 원칙</h2>
+ * <p>각 {@code @Nested} 그룹의 테스트는 자기 그룹의 보장 속성 <b>하나</b>에만
+ * 집중한다. 자원 정리(cleanup) 같은 횡단 속성은 <b>[3] 자원 정리</b> 그룹에서
+ * 전담 검증하고, 다른 그룹의 테스트가 우연히 inflight 맵을 다룬다는 이유로
+ * cleanup 단언을 추가로 끼워 넣지 않는다 — 예: [5] 용량 제한이나
+ * [8] 관측성 테스트는 {@code hangingFuture.complete("done")}으로 매달린
+ * future들을 풀어주기만 하고 후속 cleanup은 단언하지 않는다. 이건
+ * {@code @Nested} 그룹화의 의의 — "테스트가 깨지면 어느 보장이 깨졌는지
+ * 그룹명에 즉시 보인다" — 를 유지하기 위함이다.
+ *
+ * <p>예외: 비동기 race가 본질적인 시나리오([1] 동시 호출, [2] 실패 전파,
+ * [6] 호출자 격리)는 그 시나리오의 끝을 안전하게 기다리기 위해
+ * {@link #awaitNoInflight()}를 사용한다. 이건 cleanup 회귀 탐지가 아니라
+ * <b>비동기 시나리오 종료 동기화</b>이며, [3] 자원 정리 그룹의 직접
+ * cleanup 단언과 역할이 다르다.
  */
 @DisplayName("InProcessSingleFlightCoordinator — 같은 키 동시 호출을 1번의 실행으로 합치는 in-process 코디네이터")
 class InProcessSingleFlightCoordinatorTest {
