@@ -31,6 +31,25 @@
 
 **Port/Adapter (Hexagonal) 패턴 채택.**
 
+### Decision Signals — 왜 이 case 가 Hexagonal 정당화되는가
+
+Hexagonal 은 **항상 정답이 아니다.** Over-engineering 의 흔한 함정.
+다음 4 시그널 중 **2 개 이상** 해당해야 추상화 비용이 정당화된다.
+
+| # | 시그널 | 우리 case 적용 여부 | 증거 |
+|---|---|:---:|---|
+| **S1** | 여러 backend 구현이 실제로 필요 | ✅ | Phase 3 (Redis) + 미래 MQ routing 명시. ADR-002 가 backend swap 비교. |
+| **S2** | 도메인 코드가 인프라 변경 영향받지 않아야 | ✅ | NaverService 가 `SingleFlightCoordinator` Port 만 의존. Phase 1→3 transition 시 NaverService 수정 0. |
+| **S3** | Port API 가 안정적 (자주 안 바뀜) | ✅ | 4 메서드 (execute / execute+opts / getInflightState / forceRelease). Phase 1~6 진행 동안 변동 없을 예정. |
+| **S4** | Framework 독립성이 가치 있음 | ✅ | `coordinator-core` 가 Spring 의존성 0. Quarkus / Micronaut / plain Java 어디든 임베드 가능. Portfolio 측면 시그널. |
+
+**4/4 해당** → Hexagonal 채택 정당화 충분.
+
+### 만약 0~1 개만 해당했다면?
+
+[Alternative A](#alternative-a--direct-implementation-in-naverservice) (단순 utility class, 30줄) 가 더 적절.
+**YAGNI 정직하게 따르는 게 시니어 시그널.** Hexagonal 자체에 대한 고집은 cargo cult.
+
 ### Port — `SingleFlightCoordinator` 인터페이스
 
 ```java
@@ -172,6 +191,118 @@ CompletableFuture<Session> session = cache.get("user-X");  // coalesce 내장
 상세 비교: [ADR-004](ADR-004-coordinator-vs-caffeine.md)
 
 **Verdict**: 일부 use case 에는 적합하지만, 운영 안전망 통합 + multi-backend 확장이 핵심 목적이라 직접 구현.
+
+---
+
+## When NOT to Use This Pattern — 반대 점검
+
+이 ADR 의 목적은 **"Hexagonal 을 모든 곳에 권장하는 게 아니라"**, 우리 case 가 정당한지 점검하는 것. 다음 4 anti-signal 중 **2 개 이상** 해당하면 Hexagonal 은 over-engineering.
+
+### Anti-Signal A1 — 단일 backend 평생 쓸 가능성 높음
+
+- 예: 작은 startup 의 마이크로서비스가 PostgreSQL 만 쓰고 영원히 그럴 것
+- 미래에 새 backend 추가 가능성 < 30%
+- → 미리 추상화 비용 > 가치
+
+**우리 case**: ❌ 해당 안 됨. Phase 3 의 Redis adapter 가 명시적 다음 단계.
+
+### Anti-Signal A2 — Port 가 thin pass-through
+
+- 인터페이스가 사실상 1 구현체 시그니처 그대로 복사
+- 추상화의 의미가 없음 (변환 / 정책 / 합성 layer 없음)
+- → 인터페이스 + 구현 = boilerplate
+
+**우리 case**: ❌ 해당 안 됨. Port 의 4 메서드가 backend 별 다른 의미 추상:
+- `execute` — InProcess: `computeIfAbsent`. Redis: `SETNX + Lua`. MQ: consistent-hash routing.
+- `getInflightState` — InProcess: Map snapshot. Redis: `KEYS pattern + GET`.
+- `forceRelease` — InProcess: Map remove. Redis: Lua delete.
+
+추상화의 의미가 명확.
+
+### Anti-Signal A3 — 팀 작고 코드베이스 작고 변경 빈도 낮음
+
+- 추상화 maintenance cost > 가치
+- 새 팀원이 이해하는 데 비용 > 추상화의 코드 보호 효과
+- → 단순 utility class 가 정답
+
+**우리 case**: 부분 해당 (portfolio repo 라 small). 단:
+- 변경 빈도가 낮은 게 오히려 Port 안정성 시그널 (S3)
+- 다른 도메인 (CPEATS, BAEMIN) 에 같은 패턴 적용 가능성도 고려
+- → 부분 해당이지만 다른 시그널이 압도
+
+### Anti-Signal A4 — Framework 강결합 OK
+
+- 평생 Spring 만 쓸 거라면 Spring AOP 가 더 단순
+- coordinator-core 의 framework 독립성이 비용 이상의 가치 못 만들면 Hexagonal 약화
+
+**우리 case**: ❌ 해당 안 됨. Portfolio 측면에서 framework 독립성 자체가 시니어 시그널. `coordinator-core` 의 의존성 그래프에 Spring 0.
+
+### 점검 결과
+
+```
+Decision Signals (정당화):  4 / 4 해당  →  강한 정당화
+Anti-Signals (반대):        0~1 / 4 해당  →  약한 반대
+```
+
+→ **순 정당화 4점.** Hexagonal 채택 정당.
+
+만약 **Anti-Signal 이 2개 이상 해당했다면**: ADR-001 의 Decision 을 [Alternative A](#alternative-a--direct-implementation-in-naverservice) (직접 구현) 로 revision.
+
+---
+
+## Cost-Benefit Analysis
+
+추상화의 **비용 vs 이익** 정량화 (best effort):
+
+### Cost (추상화 비용)
+
+```
+[코드 작성 비용]
+  - Port interface (40 lines)
+  - InProcess adapter (60 lines, 단순 구현 대비 +20 lines)
+  - 4 Decorator (각 60 lines × 4 = 240 lines)
+  - Factory + DI 설정 (50 lines)
+  - 단위 테스트 (300 lines, 단순 utility 대비 +200 lines)
+  - 문서화 (ADR + DESIGN 약 800 lines)
+  
+  → 총 추상화 overhead 약 1,000 lines, 약 3-5 일 작업
+
+[유지보수 비용]
+  - 새 팀원 onboarding 시 추상화 chain 이해 (2-3 시간)
+  - 새 backend 추가 시 Port 시그니처 검증 (1 일 / backend)
+  - Decorator 순서 변경 시 ADR 갱신
+```
+
+### Benefit (이익)
+
+```
+[기술적 이익]
+  - Phase 3 Redis 추가 시 NaverService 수정 0 (절약 ~2 일)
+  - 다른 도메인 (CPEATS, BAEMIN) 에 같은 패턴 적용 (절약 ~5 일/도메인)
+  - 테스트 격리 (각 layer 독립 — 디버깅 시간 절약)
+  - 환경별 stack 변경 가능 (dev/prod)
+
+[Portfolio 이익]
+  - "Hexagonal 이해" 시그널 (면접 가치)
+  - ADR + 다이어그램 → architecture 토론 자료
+  - "이 라이브러리는 framework 무관" 발언 가능
+  - cross-paradigm (MVC vs WebFlux) 비교 가능 (같은 Port 두 backend)
+
+[비즈니스 이익 — 회사 컨텍스트]
+  - Phase 3 Redis 도입 시 incident free transition (이미 검증된 추상화)
+  - 다음 6개월에 새 도메인 적용 시 코드 재사용
+```
+
+### Verdict
+
+```
+Cost ≈ 1000 lines + 3-5 일
+Benefit ≈ Phase 3 transition 절약 + 다른 도메인 재사용 + portfolio + 미래 backend
+```
+
+**Phase 3 의 Redis adapter 가 첫 번째 ROI 검증 포인트.** 만약 Phase 3 가 NaverService 수정 0 으로 통과하면 Cost 회수 + 다음 backend 마다 추가 ROI.
+
+만약 Phase 3 에서 Port 시그니처 변경이 필요해지면? → ADR-001 revision + 추상화의 한계 인식 (정직한 회고).
 
 ---
 

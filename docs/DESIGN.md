@@ -10,11 +10,69 @@
 
 **Hexagonal Architecture (Port & Adapter) + Decorator Pattern (GoF)** 의 합성.
 
-이유:
-1. **Backend swap** 가능 (in-process Map ↔ Redis ↔ MQ) without 도메인 코드 수정
-2. **Cross-cutting concern 분리** (telemetry, deadline, capacity, heartbeat)
-3. **테스트 격리** (각 layer 독립 단위 테스트)
-4. **Composition flexibility** (필요한 decorator 만 stack)
+### Why this style — 4 시그널 검증
+
+Hexagonal 은 항상 정답이 아님. 다음 4 시그널 중 **2 개 이상** 해당해야 추상화 비용이 정당화.
+
+| 시그널 | 우리 case 적용? |
+|---|:---:|
+| **여러 backend 가 실제 필요** | ✅ Phase 3 (Redis) 명시 + 미래 MQ routing |
+| **도메인 코드 (NaverService) 가 인프라 변경 영향 X** | ✅ Port 만 의존 |
+| **Port API 가 안정적** | ✅ 4 메서드 (Phase 1~6 동안 변동 없을 예정) |
+| **Framework 독립성** | ✅ coordinator-core 가 Spring 의존성 0 |
+
+**4/4 해당** → Hexagonal 채택 정당화 충분.
+
+### When NOT to use this style
+
+다음 anti-signal 중 2개 이상 해당하면 [Alternative — 단순 utility class](#alternative-simple-utility-30-lines) 가 정답:
+
+| Anti-signal | 우리 case 적용? |
+|---|:---:|
+| 단일 backend 평생 쓸 가능성 높음 | ❌ |
+| Port 가 thin pass-through (변환 / 정책 layer 없음) | ❌ |
+| 팀 작고 코드베이스 작고 변경 빈도 낮음 | 부분 |
+| Framework 강결합 OK (평생 Spring 만) | ❌ |
+
+→ **0~1 anti-signal 해당.** Hexagonal 의 추상화 비용이 가치 미만 아님.
+
+상세 cost-benefit 분석 + Decision Matrix: [adr/ADR-001-port-adapter-pattern.md](adr/ADR-001-port-adapter-pattern.md#decision-signals--왜-이-case-가-hexagonal-정당화되는가)
+
+### Trade-offs we knowingly accept
+
+이 architectural 선택의 **명시적 비용**:
+
+- ❌ **약 1000 줄 추가** (단순 inline utility 30줄 대비 30× 코드)
+- ❌ **추상화 학습 비용** (새 팀원이 chain 이해하는 데 2-3시간)
+- ❌ **DI 설정 복잡** (factory 함수에서 5 layer 합성 명시)
+- ❌ **간접화 디버깅** (stack trace 가 5 layer 거침)
+
+이 비용을 받아들이는 이유:
+- **Phase 3 Redis transition 시 NaverService 수정 0** (절약 ~2일)
+- **다른 도메인 (CPEATS, BAEMIN) 재사용** (절약 ~5일/도메인)
+- **테스트 격리** (각 layer 독립 디버깅)
+- **Portfolio 어필** (architectural depth 시그널)
+
+→ **Phase 3 의 Redis adapter 가 첫 번째 ROI 검증 포인트.** 만약 거기서 Port 시그니처 변경이 필요해지면 추상화 한계 인식하고 ADR-001 revision.
+
+### Alternative — Simple Utility (30 lines)
+
+만약 위 4 시그널이 0~1 개만 해당했다면:
+
+```java
+@Service
+public class NaverService {
+    private final ConcurrentHashMap<String, CompletableFuture<Session>> inflight = new ConcurrentHashMap<>();
+
+    public CompletableFuture<Session> ensureSession(String userId) {
+        return inflight.computeIfAbsent(userId, k ->
+            doEnsureSession(k).whenComplete((v, e) -> inflight.remove(k))
+        );
+    }
+}
+```
+
+이게 **시니어 정답**. YAGNI 정직하게 따름. Hexagonal 자체에 대한 고집은 cargo cult.
 
 상세 결정 근거: [adr/ADR-001-port-adapter-pattern.md](adr/ADR-001-port-adapter-pattern.md)
 

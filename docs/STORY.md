@@ -229,6 +229,90 @@ async ensureSession(userId) {
 
 **채택**. **Single-Flight + Hexagonal (multi-instance 확장 여지) + Decorator stack (운영 안전망)** 을 종합 설계.
 
+### Meta-Decision — 왜 Hexagonal 까지 했는가?
+
+위 4 alternative 는 **lock 메커니즘** 의 비교. 그런데 Single-Flight 채택 후 추가 결정이 하나 더:
+
+> "Single-Flight 를 NaverService 에 inline 으로 박을 것인가, Port/Adapter 추상화로 분리할 것인가?"
+
+이게 **architectural-level decision**. 두 옵션:
+
+#### Meta-Option α — Inline (단순 utility)
+
+```java
+// NaverService.java
+@Service
+public class NaverService {
+    private final ConcurrentHashMap<String, CompletableFuture<Session>> inflight = new ConcurrentHashMap<>();
+
+    public CompletableFuture<Session> ensureSession(String userId) {
+        return inflight.computeIfAbsent(userId, k ->
+            doEnsureSession(k).whenComplete((v, e) -> inflight.remove(k))
+        );
+    }
+}
+```
+
+→ **30 줄 추가로 incident 즉시 차단.** YAGNI 정직.
+
+**Pros**:
+- 가장 단순. Boilerplate 0.
+- 빠른 시작. 즉시 production 배포 가능.
+
+**Cons**:
+- ❌ Multi-instance 갈 때 NaverService 다시 수정
+- ❌ Telemetry / Deadline / Capacity 도 NaverService 안에 박힘 (SRP 위반)
+- ❌ 다른 도메인 (CPEATS, BAEMIN) 에 같은 패턴 적용 시 코드 중복
+
+#### Meta-Option β — Hexagonal (Port/Adapter)
+
+```java
+public interface SingleFlightCoordinator { ... }
+
+class InProcessSingleFlightCoordinator implements SingleFlightCoordinator { ... }
+class RedisSingleFlightCoordinator implements SingleFlightCoordinator { ... }
+
+@Service
+public class NaverService {
+    private final SingleFlightCoordinator coordinator;  // Port 만 의존
+    public CompletableFuture<Session> ensureSession(String userId) {
+        return coordinator.execute(userId, () -> doEnsureSession(userId));
+    }
+}
+```
+
+→ **약 1000 줄** (Port + Adapter + Decorator 4개 + 테스트). 약 3-5일 작업.
+
+**Pros**:
+- ✅ Multi-instance 갈 때 NaverService 수정 0
+- ✅ Decorator 4개 (Telemetry / Heartbeat / Capacity / Deadline) SRP 분리
+- ✅ 다른 도메인 재사용
+- ✅ Framework 독립성
+
+**Cons**:
+- ❌ 약 30× 코드 양 (단순 인라인 대비)
+- ❌ 추상화 학습 비용
+- ❌ 단일 backend 평생 쓸 거면 over-engineering
+
+#### 채택 — Meta-Option β
+
+근거 4 시그널 ([ADR-001](adr/ADR-001-port-adapter-pattern.md) 의 "Decision Signals"):
+
+| 시그널 | 우리 case |
+|---|---|
+| 여러 backend 실제 필요 | ✅ Phase 3 Redis 명시 |
+| 도메인 코드 backend 영향 X | ✅ NaverService 보호 |
+| Port API 안정성 | ✅ 4 메서드 충분 |
+| Framework 독립성 가치 | ✅ Spring 0 의존 |
+
+**4/4 해당.** Hexagonal 의 추가 cost (약 1000줄) 가 정당화되는 case.
+
+#### 만약 시그널 0~1개만 해당했다면?
+
+→ **Meta-Option α (inline) 가 정답.** Over-engineering 회피. 두 번째 backend 가 명백해진 시점에 그때 추상화 (refactoring with TDD).
+
+이 판단이 시니어 시그널: **"Hexagonal 자체에 대한 고집이 아니라 case 분석"**. 만약 모든 프로젝트에 무조건 Hexagonal 적용한다면 그게 cargo cult.
+
 ---
 
 ## Act 5 — The Solution
