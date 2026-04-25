@@ -1,0 +1,199 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit 리뷰 설정 — single-flight-coordinator-lab
+#
+# 이 프로젝트는 CLAUDE.md에 명시된 두 컨벤션을 PR 리뷰에서 강제한다:
+#   1. 테스트는 "실행 가능한 명세서" 스타일 (@Nested + 한국어 @DisplayName + 헬퍼)
+#   2. 커밋은 Conventional Commits, 한 커밋 = 단독 revert 가능한 단위
+#
+# CodeRabbit은 한국어로 리뷰하고, 비즈니스 로직과 동시성 정확성을 한 줄씩
+# 따져 단호하게 변경 요청을 낸다. 우회로 빌드를 통과시키는 시도는 차단한다.
+
+language: ko-KR
+
+tone_instructions: |
+  한국어로 리뷰한다. 톤은 정중하되 단호하다. 칭찬은 짧게, 개선 제안은
+  구체적인 코드 예시 또는 대안 패치와 함께 제시한다.
+
+  비즈니스 로직과 동시성 정확성을 한 줄 한 줄 따진다. 단순 스타일 지적은
+  최소화하고, 다음 항목을 우선적으로 짚는다:
+
+  - 동시성 코드는 happens-before, 원자성, race condition을 명시적으로 따진다.
+    "ConcurrentHashMap.compute의 자물쇠가 깨지지 않는가", "whenComplete 등록
+    시점과 맵 상태가 어긋나지 않는가" 같은 질문을 직접 던진다.
+  - WHY가 비자명한데 주석이 없으면 보강을 요청한다. 반대로 자명한 코드에 붙은
+    노이즈성 주석은 제거를 요청한다 (CLAUDE.md "Default to writing no comments"
+    원칙 인용).
+  - 테스트가 잡지 못하는 엣지/실패 시나리오를 적극 제안한다.
+  - "테스트 통과시키기 위해 구현 의도를 우회한 흔적"이 보이면 단호히 지적하고
+    구현 결함이라면 구현 수정을 권고한다. (예: 약화된 단언, 무시되는 catch,
+    @Disabled 추가, 우회 가드 등)
+  - 자바 21 record/sealed/pattern matching/switch expression을 활용 가능한
+    위치에서 구식 패턴이 쓰였다면 모던 대안을 제시한다.
+  - 변경이 CLAUDE.md의 어떤 규칙과 충돌하는지 명시적으로 인용한다.
+  - 의존성 추가는 라이선스/보안/유지보수 부담을 함께 평가한다.
+
+  리뷰 마지막에 "이 변경이 CLAUDE.md의 컨벤션과 일치하는가?" 와
+  "이 PR이 머지되면 어느 contract 테스트가 새로 깨질 가능성이 있는가?"
+  두 질문에 대한 짧은 답을 남긴다.
+
+early_access: false
+
+reviews:
+  # 단호한 리뷰 모드 — 발견한 이슈는 모두 변경 요청으로 등록
+  profile: assertive
+  request_changes_workflow: true
+
+  # 리뷰 가독성
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+  poem: false  # 시는 안 쓴다. 이 프로젝트는 진지하다.
+
+  # 자동 리뷰 — main/develop 및 기능 브랜치 PR
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+      - develop
+      - "feat/.*"
+      - "fix/.*"
+      - "chore/.*"
+
+  # 리뷰에서 제외 — 빌드 아티팩트, 락 파일, 바이너리
+  path_filters:
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!**/out/**"
+    - "!**/dist/**"
+    - "!**/node_modules/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+    - "!**/gradle/wrapper/gradle-wrapper.jar"
+    - "!**/*.class"
+    - "!**/*.jar"
+    - "!**/*.png"
+    - "!**/*.jpg"
+
+  # 경로별 추가 지시 — CLAUDE.md 컨벤션을 코드에 매핑
+  path_instructions:
+    - path: "**/*Test.java"
+      instructions: |
+        이 프로젝트의 테스트는 "실행 가능한 명세서"이다.
+        모범: coordinator-core/src/test/.../InProcessSingleFlightCoordinatorTest.java
+
+        다음 5원칙을 엄격하게 검증한다:
+
+        1. 클래스 헤더 = 계약서
+           - 클래스 Javadoc 맨 위에 "변경자에게" 메시지가 있는가?
+           - "이 클래스가 보장하는 N가지 속성"이 번호 매긴 목록으로 있는가?
+           - 클래스 @DisplayName이 클래스 한 줄 요약을 담는가?
+
+        2. @Nested = 보장 속성 단위 그룹화
+           - 기능별/메서드별이 아니라 "외부에 약속한 속성별"로 묶였는가?
+           - [N] 번호가 클래스 헤더 N번 속성과 1:1 매핑되는가?
+           - @Nested 클래스 @DisplayName이 그 절의 한 줄 명세인가?
+
+        3. @DisplayName = 한국어 자연어 명세
+           - 모든 레벨(클래스/@Nested/@Test)에 한국어 @DisplayName인가?
+           - 메서드명은 영어, @DisplayName은 한국어인가?
+           - "X일 때 Y한다" / "X는 Y한다" 형태의 완성된 문장인가?
+
+        4. 본문은 AAA / Given-When-Then, 노이즈는 헬퍼로
+           - 테스트 본문이 시나리오와 단언에만 집중하는가?
+           - 반복되는 비동기 동기화·세팅이 헬퍼로 추출됐는가?
+           - 의도가 비자명한 곳에만 주석이 달렸는가?
+
+        5. 헬퍼는 클래스 하단 한 군데
+           - awaitNoInflight() 처럼 이름이 의도를 직접 표현하는가?
+
+        추가로:
+        - 테스트가 실패하는 진짜 결함을 우회로 통과시키지 않았는가?
+        - 새 시나리오가 클래스 헤더의 보장 N가지에 추가되었는가?
+        - assertThatThrownBy + isInstanceOf + has*Reference/InstanceOf 조합으로
+          예외 검증이 명확한가?
+        - Awaitility 사용 시 atMost가 합리적이고 await의 대상이 명확한가?
+
+    - path: "coordinator-core/src/main/**/*.java"
+      instructions: |
+        SingleFlight 패턴의 핵심 라이브러리이다. 동시성/원자성을 1순위로 검토한다.
+
+        체크리스트:
+
+        - ConcurrentHashMap.compute의 원자성을 깨는 패턴이 없는가?
+          (compute 안에서 같은 키로 다시 compute 호출, 람다 안에서 외부
+           Map 변형 등은 deadlock/IllegalStateException 위험)
+        - whenComplete 등록 시점과 맵 상태에 race가 없는가?
+          (이미 완료된 future에 등록하면 즉시 발동 — 등록 이전에 맵에
+           원하는 record가 들어가 있어야 한다. 모범: InProcess의 newOwnerRef
+           패턴.)
+        - 같은 키 재진입(re-entrancy) 위험이 있는가? 명확히 거부하든 안전
+          처리하든 계약을 정하라.
+        - cancel 전파/격리 정책이 일관되는가? 호출자에게 owner future를
+          그대로 노출하면 한 명의 cancel이 전체를 죽인다 (future.copy() 패턴).
+        - cleanup hook이 한 번만 등록되는가? owner 경로에서만 등록되는가?
+        - 에러 경로(supplier sync throw, supplier null 반환, owner future
+          exceptional 완료, forceRelease 등)에서도 누수 없는가?
+        - public API 진입점에 Objects.requireNonNull로 fail-fast 가드가
+          있는가? 메시지에 인자명을 넣어 디버깅 친화적인가?
+        - 의도가 비자명한 곳에만 주석을 달았는가? (불필요한 docstring 거부)
+
+        변경 시 InProcessSingleFlightCoordinatorTest의 17개 contract
+        테스트가 모두 초록색이어야 함을 PR 본문에서 확인하라.
+
+    - path: "**/*.java"
+      instructions: |
+        - 자바 21 기능을 우선 활용 (record / sealed / pattern matching /
+          switch expression / text block)
+        - 절대 null이 될 수 없는 곳에 null check를 넣지 않는다 (CLAUDE.md
+          "Don't add error handling, fallbacks, or validation for scenarios
+          that can't happen" 원칙)
+        - 주석은 WHY가 비자명할 때만. 자명한 한 줄 주석은 거부한다.
+        - 의미 없는 docstring (예: "@param x x 값") 추가는 거부한다.
+        - try-catch 안에서 예외를 무시하거나 e.printStackTrace()만 하는
+          패턴은 단호히 지적한다.
+
+    - path: "**/build.gradle*"
+      instructions: |
+        - 의존성 추가는 라이선스(특히 GPL/AGPL), 보안 취약점,
+          유지보수 활성도를 함께 평가한다.
+        - 멀티모듈 프로젝트에서 동일 의존성을 여러 모듈이 직접 선언하면
+          버전 카탈로그(libs.versions.toml) 사용을 제안한다.
+        - test 의존성은 testImplementation, 컴파일타임 전용은 compileOnly로
+          정확히 분리됐는지 확인한다.
+
+    - path: "CLAUDE.md"
+      instructions: |
+        프로젝트 컨벤션 변경이다. 영향 범위가 넓으므로 다음을 확인한다:
+        - 기존 코드/테스트가 새 규칙을 만족하는지
+        - 모범 사례 링크가 실제 존재하는 파일을 가리키는지
+        - 규칙 변경이라면 이전 규칙으로 작성된 코드의 마이그레이션 계획이
+          PR 본문에 있는지
+
+    - path: ".coderabbit.yaml"
+      instructions: |
+        리뷰 봇 설정 자체의 변경이다. tone_instructions나 path_instructions
+        를 약화시키는 변경(profile chill로 다운그레이드, request_changes_workflow
+        제거, 검증 항목 삭제 등)은 사유를 PR 본문에 명시해야 한다.
+
+  # 도구 통합
+  tools:
+    ast-grep:
+      essential_rules: true
+    gitleaks:
+      enabled: true  # 비밀정보 누출 차단
+    languagetool:
+      enabled: false  # 한국어 위주라 영어 grammar 검사 비활성화
+    markdownlint:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
