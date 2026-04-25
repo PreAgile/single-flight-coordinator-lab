@@ -10,11 +10,12 @@
 면접 30분 전 자가 점검:
 
 - [ ] [STORY.md](STORY.md) 의 7-act 흐름이 머릿속에 있는가
-- [ ] 핵심 측정값 4개를 외우고 있는가:
-  - 외부 호출 동시 20요청 시 20 → 1
-  - 다른 IP 할당 80초 윈도우 10 → 1
-  - P99 850ms → 32ms (예상치)
-  - 24h 동안 lock incident 5건 → 0건
+- [ ] 핵심 측정값 4개를 외우고 있는가 (라벨 분리):
+  - 📂 **운영 추정**: 외부 호출 동시 20요청 시 20 → 1
+  - 📂 **운영 추정**: 다른 IP 할당 80초 윈도우 10 → 1
+  - 📂 **운영 추정**: 24h 동안 lock incident 5건 → 0건
+  - 🎯 **합성 벤치 가설** (S2 cache+SF): P99 850ms → ~5ms (Phase 2 측정 예정)
+  - 📊 **실측**: TBD (Phase 2 완료 후)
 - [ ] 대안 4개의 trade-off 를 화이트보드에 그릴 수 있는가
 - [ ] 5 layer Decorator 의 순서 이유를 즉답할 수 있는가
 - [ ] [GitHub repo URL](https://github.com/PreAgile/single-flight-coordinator-lab) 알고 있는가
@@ -25,9 +26,11 @@
 
 ### 자기소개에서 (프로젝트 한 줄)
 
-> "B2B SaaS 외부 API 연동 시스템에서 동시 요청이 외부 시스템에 distributed login 으로 감지되어 보안 차단 걸리는 incident 를 겪었습니다. SingleFlight 패턴을 Hexagonal + Decorator 로 도입해서 풀었고, 그 패턴을 Java / Spring MVC / WebFlux 로 재구현하면서 각 paradigm 의 thundering herd 표출 차이를 측정값으로 비교한 portfolio piece 입니다. GitHub 에 올라가있고, 6 Phase roadmap 으로 진행 중입니다."
+> "B2B SaaS 외부 API 연동 시스템에서 동시 요청이 외부 시스템에 distributed login 으로 감지되어 보안 차단 걸리는 incident 를 겪었습니다. 그 패턴을 Single-Flight Coordinator 로 풀었던 경험을, Hexagonal + Decorator 구조로 정리하면서 Java / Spring MVC / WebFlux 의 paradigm 별 thundering herd 표출 차이를 재현 가능한 lab 으로 만드는 중입니다. GitHub 에 올라가있고, 6 Phase roadmap 중 진행 중입니다 (현재 Phase X — 라벨 분리: 📂 운영 추정 / 📊 합성 벤치 측정 예정)."
 
-→ 약 50초. **Hook + 패턴 + 비교 어필 + 진행 시그널** 4 요소.
+→ 약 60초. **Hook + 패턴 + 진행 시그널 + 검증 정직성** 4 요소.
+
+> ⚠️ **표현 주의**: "도입해서 풀었고 측정값으로 비교했습니다" → 운영에선 풀었지만, **이 repo 의 합성 벤치 측정은 Phase 진행 중**. 라벨 분리하여 정직하게.
 
 ---
 
@@ -79,16 +82,19 @@
 
 ### Result (1분) — 결과
 
-> "**기술 임팩트**: 외부 호출이 동시 20요청 시 20번 → 1번으로 감소, 다른 IP 할당이 80초 윈도우에서 10개 → 1개, P99 latency 850ms → 32ms.
+> "**운영 환경 임팩트** 📂 (익명화 추정): 외부 호출이 동시 20요청 시 20번 → 1번, 다른 IP 할당이 80초 윈도우에서 10개 → 1개, 24시간 동안 발생하던 보안 차단 incident 5건이 0건으로.
 >
-> **비즈니스 임팩트**: 24시간 동안 발생하던 보안 차단 incident 5건이 0건으로 완전 차단됐습니다. CS 비용 + customer churn 위험 합산 연간 약 N원 손실 회피로 추정했고, 정성적으로는 외부 시스템의 IP 풀 blacklist 위험을 사전에 차단했습니다.
+> **합성 벤치 가설** 🎯 (Phase 2~6 측정 예정): cache+SF S2 시나리오에서 P99 850ms → ~5ms, single-flight 만의 효과 (S3) 는 외부 호출 ~120 → ~1 (60s 부하 기준). **현재 라벨은 가설이고, Phase 측정 시 실측 ↔ 가설 비교 표로 갱신** 됩니다.
 >
-> **Portfolio 측면**: 이 패턴을 Java / Spring MVC / WebFlux 로 재구현해서 paradigm 별 thundering herd 표출 차이를 비교하고 있습니다. 진행 중이고 [GitHub repo URL] 에서 확인 가능합니다."
+> **비즈니스 임팩트** 📂: CS 비용 + customer churn 위험 합산 연간 약 N원 손실 회피로 추정 (정확 N 값은 NDA, 사고 방식은 [BENCHMARK.md] 의 4 차원 framework 에). 정성적으로는 외부 시스템의 IP 풀 blacklist 위험을 사전에 차단.
+>
+> **Portfolio 측면**: 이 패턴을 Java / Spring MVC / WebFlux 로 재구현하면서 paradigm 별 thundering herd 표출 차이를 측정 시나리오 (S1 burst / S2 cache+SF / S3 pure SF) 로 분리해 비교 중입니다. 진행 중이고 [GitHub repo URL] 에서 확인 가능합니다."
 
 키 포인트:
-- 정량 + 정성
-- "여기서 멈추지 않고 portfolio 까지" 시그널
+- **라벨 분리** (📂 운영 추정 / 🎯 합성 벤치 가설 / 📊 측정값)
+- 정직성 — "측정 예정" 명시
 - repo 링크 제공
+- 비즈니스 임팩트 framework cite 가능 시그널
 
 ---
 

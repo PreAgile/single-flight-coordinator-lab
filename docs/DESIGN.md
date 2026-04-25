@@ -225,7 +225,7 @@ Telemetry   ← 로그 / 메트릭 (outermost)
 
 ### Decorator 1 — Deadline
 
-**책임**: hard wall-clock 타임아웃. 도달 시 owner + 모든 waiter 강제 reject.
+**책임**: hard wall-clock 타임아웃. 도달 시 **CompletableFuture 차원에서** owner + 모든 waiter 가 같은 `TimeoutException` 받음.
 
 ```java
 public class DeadlineDecorator implements SingleFlightCoordinator {
@@ -248,25 +248,77 @@ public class DeadlineDecorator implements SingleFlightCoordinator {
 
 **Java 21 의 `CompletableFuture.orTimeout`** — TS 의 `Promise.race(op, timer)` 보다 우아.
 
+#### ⚠️ 중요한 nuance — "Future timeout" vs "실제 작업 cancellation"
+
+`orTimeout` 은 **CompletableFuture 만 timeout** 시킴:
+- ✅ 모든 callers (owner + waiter) 가 `TimeoutException` 받음 (예외 전파 정확)
+- ✅ Inflight 엔트리는 `whenComplete` cleanup 으로 제거됨
+- ❌ **underlying 작업 (Playwright session, Redis call 등) 은 cancel 안 됨**
+- ❌ Orphaned 작업이 백그라운드에서 계속 진행 → **자원 leak 위험**
+
+**자원 cleanup 책임 분리**:
+- Coordinator 는 future-level 보호만 담당
+- 실 작업의 cleanup 은 **operation 본체** 에서 `try-finally` / `whenComplete` / `Cleaner` 로 명시적 처리
+- 예: NaverService 의 `ensureSession` 은 timeout 시 `closePage(userId)` 호출하는 finally hook
+
+→ Phase 1 코드에서 이 분리를 명시적으로 시연. ADR-001 의 Implementation Notes 참고.
+
 ### Decorator 2 — Capacity
 
 **책임**: 동일 key 의 waiter 수가 cap (default 30) 도달 시 새 호출 즉시 reject.
 
+#### ⚠️ Atomicity 주의 — 두 단계 검사는 race condition
+
+순진한 구현 (race condition 가능):
 ```java
+// ❌ 이건 race 가능
 @Override
 public <T> CompletableFuture<T> execute(String key, Supplier<CompletableFuture<T>> op,
                                          SingleFlightOptions options) {
-    int max = options.maxWaiters().orElse(defaultMax);
-    int current = countWaiters(key);
-
-    if (current >= max) {
-        return CompletableFuture.failedFuture(
-            new CongestionException(key, current, max)
-        );
-    }
-    return inner.execute(key, op, options);
+    int current = inner.getInflightState().find(key).waiterCount;  // (1) read
+    if (current >= max) throw new CongestionException(...);
+    return inner.execute(key, op, options);  // (2) attach — 사이에 다른 thread 진입 가능
 }
 ```
+
+(1) read 와 (2) attach 사이에 다른 thread 가 들어오면 cap 31, 32 도 통과 가능.
+
+**올바른 atomic 구현**: capacity 검사를 base record 에 박음.
+
+```java
+// ✅ 올바른 방식 — base 의 atomic record 안에 cap check
+public class InProcessSingleFlightCoordinator implements SingleFlightCoordinator {
+    @Override
+    public <T> CompletableFuture<T> execute(String key, Supplier<CompletableFuture<T>> op,
+                                             SingleFlightOptions options) {
+        int max = options.maxWaiters().orElse(Integer.MAX_VALUE);
+
+        return inflight.compute(key, (k, existing) -> {
+            if (existing != null) {
+                if (existing.waiterCount.incrementAndGet() > max) {
+                    existing.waiterCount.decrementAndGet();
+                    throw new CongestionException(key, max, max);
+                }
+                return existing;
+            }
+            // 새 owner
+            CompletableFuture<T> future = op.get().whenComplete((v, e) -> inflight.remove(k));
+            return new InflightRecord<>(k, future, new AtomicInteger(1));
+        }).future;
+    }
+}
+```
+
+→ **Capacity 검사가 base record 의 atomic compute 안에서.** Decorator 가 아닌 base 의 책임으로 이동.
+
+**Decorator 의 역할** 은 cap 의 default 값 / option 처리 / telemetry 정도로 한정. 진짜 atomic 검사는 base 가 책임.
+
+→ Phase 1 코드에서 이 atomic 보장을 명시적으로 구현. 단위 테스트의 race scenario 가 검증 포인트.
+
+이 구조의 trade-off:
+- ✅ Cap 정확 보장 (race-free)
+- ❌ Decorator 의 SRP 살짝 약화 (capacity 가 base 와 결합)
+- → ADR-001 의 "When NOT to use" 에서 언급한 "Anti-Signal A2: Port 가 thin pass-through" 로 가는 경향. 실용적 타협.
 
 → UI spam 방어. 이미 attached waiter 는 영향 없음, 신규 호출만 차단.
 

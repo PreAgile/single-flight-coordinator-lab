@@ -380,17 +380,43 @@ ensureSessionImpl() (Playwright 영역)
 
 ## Act 6 — The Result
 
-### 기술 임팩트 (정량)
+### 측정값 라벨 — 출처 분리
 
-> ⚠️ 아래 측정값은 실 운영 incident 의 추정값입니다. 본 repo 의 [BENCHMARK.md](BENCHMARK.md) 에서 재현 가능한 합성 부하 + Phase 2 측정으로 검증 예정.
+수치마다 출처가 다름. 4 라벨로 명시:
 
-| 항목 | Before (without single-flight) | After (with single-flight) | Δ |
-|---|---|---|---|
-| 외부 호출 수 (동시 20 요청) | 20 | 1 | **20× 감소** |
-| 다른 IP 할당 (80초 윈도우) | 10 | 1 | **10× 감소** |
-| P99 latency | ~850ms | ~32ms | **26× 빠름** |
-| 외부 시스템 보안 차단 | 발생 | 0 (24h 모니터링) | **완전 차단** |
-| 영향받은 customer (24h) | 5 명 | 0 명 | **0** |
+- 📂 **Anonymized Production Estimate** — 실 운영 incident 익명화 추정
+- 🎯 **Hypothesis** — 합성 벤치 가설 / 목표치 (Phase 측정 전)
+- 📊 **Measured** — Phase 별 실측 (현재 모두 TBD)
+- 📅 **Planned** — 미래 작업 / 환경
+
+### 기술 임팩트 — 운영 추정 vs 합성 벤치 가설
+
+#### 운영 환경 추정 📂
+
+| 항목 | Before | After |
+|---|---|---|
+| 외부 호출 수 (동시 20 요청) | 20 | 1 |
+| 다른 IP 할당 (80초 윈도우) | 10 | 1 |
+| 외부 시스템 보안 차단 | 발생 | 0 (24h 모니터링) |
+| 영향받은 customer (24h) | 5 명 | 0 명 |
+
+→ 외부 SaaS + 실 customer + 프록시 풀의 **운영 환경 측정**. 합성 벤치로 정확히 재현 불가.
+
+#### 합성 벤치 가설 🎯 (Phase 2~6 에서 검증 예정)
+
+| Scenario | Metric | Baseline | Coalesced | Δ (가설) |
+|---|---|---|---|---|
+| **S1 — Burst** (100 동시) | 외부 호출 | 100 | 1 | 100× |
+| **S1 — Burst** | P99 | ~500ms | ~500ms | — (모두 owner 응답 대기) |
+| **S2 — Sustained + cache** | 외부 호출 (60s) | ~6,000 | ~1 | 6000× (cache+SF 합산) |
+| **S2 — Sustained + cache** | P99 | 850ms | ~5ms | 170× (cache hit) |
+| **S3 — Pure SF (no cache)** | 외부 호출 (60s) | ~6,000 | ~120 | 50× (SF 만의 효과) |
+
+→ **"P99 850→32ms" 같은 수치는 S2 (cache + SF 합산) 의 가설**. 운영 incident 의 P99 는 외부 SaaS 응답 변동성 등 추가 변수로 직접 비교 불가.
+
+📊 실측은 Phase 2 (MVC) / Phase 3 (Redis) / Phase 6 (WebFlux) 완료 시 [BENCHMARK.md](BENCHMARK.md) 의 각 Phase 표로 갱신.
+
+→ **면접에서 cite 시 라벨 명시 필수**. "운영 추정 / 합성 벤치 가설 / Phase X 실측" 어느 출처인지 즉답.
 
 ### 비즈니스 임팩트 (정량 추정)
 

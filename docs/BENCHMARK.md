@@ -1,8 +1,12 @@
-# BENCHMARK — Methodology, Results, and Business Impact Framework
+# BENCHMARK — Methodology, Scenarios, and Business Impact Framework
 
-> 측정값은 portfolio 의 무기. 이 문서는 **재현 가능한 측정 방법론** + **paradigm 별 결과** + **비즈니스 임팩트 정량화 framework**.
+> 측정값은 portfolio 의 무기. 이 문서는 **재현 가능한 측정 방법론** + **3 시나리오 분리** + **비즈니스 임팩트 framework**.
 >
-> Phase 별 결과는 측정 완료 시점에 채워짐. 현재 일부는 placeholder.
+> ⚠️ **현재는 narrative skeleton 단계.** 모든 수치는 라벨로 출처 분리:
+> - 🎯 **Hypothesis** — Phase 측정 전 가설 / 목표치
+> - 📊 **Measured** — 실측 (Phase 별 완료 시 갱신, 현재 모두 TBD)
+> - 📂 **Anonymized Production Estimate** — 실 운영 incident 익명화 추정
+> - 📅 **Planned** — 미래 작업 / 환경
 
 ---
 
@@ -11,20 +15,102 @@
 Portfolio 의 핵심 원칙 ([THESIS.md](THESIS.md) 참고):
 
 > ❌ "고성능 시스템 만들었어요"
-> ✅ "k6 기준 100 동시 요청 시 외부 호출 100→1, P99 850ms→32ms, Tomcat busy thread 100%→5%"
+> ✅ "k6 기준 [측정 시나리오 명시] 에서 외부 호출 N→1, P99 850ms→32ms"
 
 **측정 가능한 수치만 어필.** 그게 portfolio 가 다른 portfolio 와 차이를 만드는 점.
 
 ---
 
+## 3 Benchmark Scenarios — Single-Flight 의미론 분리
+
+> **이 단원이 가장 중요.** Single-flight 는 "동시에 inflight 인 동일 key 호출만" 합친다.
+> "60초 sustained 부하 전체를 1회 외부 호출" 은 **single-flight 만으로 불가능**, cache TTL 추가 가정 필요.
+> 시나리오를 명확히 분리해야 가설 / 측정 / 결론이 정확.
+
+### Scenario 1 — Burst Coalescing 🎯
+
+**목적**: 한 instant 에 도착한 동시 N 요청 → 외부 호출 1회 (single-flight 본질).
+
+```
+Workload:
+  100 VU, single burst
+  모두 같은 key K
+  External API: 500ms 지연
+  cache: 비활성 (single-flight 만 측정)
+
+Hypothesis:
+  외부 호출:    1
+  P99 latency: ~500ms (모두 owner 의 응답 기다림)
+  P50:         ~500ms
+  Throughput:  100 / 500ms ≈ 200 req/s
+```
+
+→ 이게 **운영 incident 시나리오의 본질** ([INCIDENT.md](INCIDENT.md)). Customer 의 batch reply 가 1~3초 간격으로 발사되어 80초 안에 20 요청 → owner 진행 중에 다 도착 → coalesce.
+
+### Scenario 2 — Sustained + Cache TTL 🎯
+
+**목적**: 60초 지속 부하 + cache TTL → 외부 호출 ~1회 (cache + single-flight 합산 효과).
+
+```
+Workload:
+  100 VU, sustained 60s
+  같은 key K
+  External API: 500ms 지연
+  cache TTL: 5분 (외부 호출 결과 cache)
+
+Hypothesis:
+  외부 호출:    1 (cache TTL 만료 안 됨)
+  P99 latency: 5ms (cache hit)
+  P50:         3ms
+  Throughput:  ~3,000 req/s (cache 응답 속도)
+```
+
+→ 이게 **흔히 portfolio 가 어필하는 수치**. 단, **cache + single-flight 합산** 이지 single-flight 만의 효과 아님.
+
+### Scenario 3 — Pure Single-Flight (No Cache) 🎯
+
+**목적**: 60초 지속 + cache 비활성 → owner 완료 후 다음 wave 새 owner.
+
+```
+Workload:
+  100 VU, sustained 60s
+  같은 key K
+  External API: 500ms 지연
+  cache: 비활성
+
+Hypothesis:
+  외부 호출:    ~120 (60s ÷ 500ms = 120 successive owners)
+  P99 latency: ~500ms (모두 owner 또는 직후 waiter)
+  P50:         ~500ms
+  Throughput:  ~120 외부 호출에 대해 100 VU 가 분산 → ~ 200 req/s
+```
+
+→ 이게 **순수 single-flight 만의 효과**. cache 가 별도로 풀어주는 게 아닌 영역.
+
+### 비교 요약
+
+| Scenario | 외부 호출 (가설) | P99 (가설) | 적합한 어필 |
+|---|---|---|---|
+| **S1 — Burst** | 1 | ~500ms | Single-flight 본질 시연 |
+| **S2 — Sustained + TTL** | 1 | ~5ms | "프로덕션 스택" 어필 (cache 포함) |
+| **S3 — Pure SF (No Cache)** | ~120 | ~500ms | Single-flight 만의 효과 |
+
+**우리 운영 incident 의 본질은 S1.** Cache 만료 + 동시 burst → 외부 시스템에 distributed login. SF 만으로 충분히 풀림.
+
+**우리 portfolio 어필은 S1 + S2.** S1 은 패턴의 본질, S2 는 production-like 설정.
+
+→ 면접에서 "어떤 scenario 의 측정값?" 즉답해야 시니어 시그널.
+
+---
+
 ## 공통 벤치마크 규약
 
-모든 Phase 의 측정에 적용. portfolio-docs 의 "공통 벤치마크 규약" 과 일관.
+모든 scenario 의 측정에 적용. portfolio-docs 의 "공통 벤치마크 규약" 과 일관.
 
 | 항목 | 규약 | 이유 |
 |---|---|---|
 | Warm-up | 측정 전 30초 warm-up, 결과에서 제외 | JIT 컴파일 / 커넥션 풀 / 캐시 hit 안정화 |
-| 측정 시간 | 최소 60초 sustained load | 짧은 burst 는 GC, scheduler 노이즈 반영 못함 |
+| 측정 시간 | 최소 60초 sustained load (S1 은 burst 모드) | 짧은 burst 는 GC, scheduler 노이즈 반영 못함 |
 | 반복 | 동일 조건 3회 실행, 중앙값 사용 | 단발 측정은 outlier 취약 |
 | 데이터셋 | 트랙별 고정 seed (크기 명시) | 데이터 양에 따라 성능 변화 |
 | 환경 스펙 | docker-compose 리소스 제한값 명시 (CPU/Memory) | "내 맥북에서 돌린 숫자" 에 재현성 부여 |
@@ -33,9 +119,11 @@ Portfolio 의 핵심 원칙 ([THESIS.md](THESIS.md) 참고):
 
 ---
 
-## Test Environment
+## Test Environment 📅
 
-### Hardware (현재 spec — Phase 별 측정 시 갱신)
+> Phase 2 측정 시 검증 + 실 spec 으로 갱신.
+
+### Hardware (예정 spec)
 
 ```
 Host:        Apple Mac M1 / M2 (24GB RAM)
@@ -45,7 +133,7 @@ Spring:      Boot 3.2+
 Tomcat:      max-threads=200 (default)
 ```
 
-### Software Stack
+### Software Stack 📅
 
 ```
 Scrap layer:   k6 v0.x (HTTP load)
@@ -55,24 +143,13 @@ Backing store: Redis 7.2 (Phase 3+)
 External API simulator: SlowExternalApi (in-process, 500ms 인위 지연)
 ```
 
-### Workload Profile
-
-```
-요청 패턴: GET /api/{baseline|coalesced}/expensive?key={K}
-key 분포: 단일 key (worst case for thundering herd)
-부하: VU=100 (k6 virtual users)
-패턴: warm-up 30s + sustained 60s + cool-down 30s
-반복: 3 회, 중앙값 사용
-외부 API 시뮬: 500ms 지연 + 90% 성공률
-```
-
 ---
 
 ## Phase 1 Results — Library Unit Tests
 
 > 단위 테스트 차원의 정확성 검증. 부하 측정은 Phase 2 부터.
 
-### Coverage
+### Coverage 📅
 
 ```
 coordinator-core/src/test/
@@ -85,7 +162,7 @@ coordinator-core/src/test/
                                                     Total: 27 tests
 ```
 
-### Performance (단위 테스트 환경)
+### Performance (단위 테스트 환경) 📊
 
 ```
 TBD — Phase 1 완료 후 채움
@@ -97,102 +174,106 @@ TBD — Phase 1 완료 후 채움
 
 > MVC paradigm 의 thundering herd 표출 + SingleFlight 효과 측정. **"thread pool 보호"** 가 핵심.
 
-### Scenario
+### Scenario 1 (Burst) — MVC Baseline vs Coalesced
 
-```
-Endpoints:
-  GET /api/baseline/expensive?key=K   (no coalesce)
-  GET /api/coalesced/expensive?key=K  (with single-flight)
-
-Workload: 100 VU, 동일 key K, sustained 60s
-External API: 500ms 지연
-```
-
-### Expected Results (Phase 2 완료 시 검증)
-
-| Metric | Baseline | Coalesced | Δ |
+| Metric | Baseline 🎯 | Coalesced 🎯 | Δ (가설) |
 |---|---|---|---|
-| 외부 호출 수 (60s 동안) | ~6,000 | 1 | **6000×** |
-| P50 latency | 500ms | 5ms | 100× |
-| P99 latency | 850ms | 32ms | **26×** |
-| Error rate | < 1% | < 1% | — |
-| Tomcat busy thread (avg) | 100% | 5% | **20× free** |
+| 외부 호출 수 | 100 | 1 | **100×** |
+| P99 latency | ~850ms | ~500ms | 1.7× |
+| Tomcat busy thread (peak) | 100% (200 점유) | 5% (10 점유) | **20× free** |
+| HTTP error rate | < 5% | < 1% | — |
+
+**측정값**: 📊 TBD (Phase 2 완료 시).
+
+### Scenario 2 (Sustained + Cache TTL) — MVC
+
+| Metric | Baseline 🎯 | Coalesced 🎯 | Δ (가설) |
+|---|---|---|---|
+| 외부 호출 수 (60s) | ~6,000 | ~1 | 6000× |
+| P99 latency | 850ms | ~5ms | 170× |
+| P50 latency | 500ms | ~3ms | 167× |
 | Throughput (req/s) | ~120 | ~3,000 | 25× |
 
-### MVC 의 통점 시각화 (Phase 2 완료 시 Grafana 캡처 첨부)
+**측정값**: 📊 TBD.
+
+### Scenario 3 (Pure SF, No Cache) — MVC
+
+| Metric | Baseline 🎯 | Coalesced 🎯 | Δ (가설) |
+|---|---|---|---|
+| 외부 호출 수 (60s) | ~6,000 | ~120 | 50× |
+| P99 latency | 850ms | ~500ms | 1.7× |
+| Tomcat busy thread (avg) | 100% | 60% (owner 들 점유) | 1.7× free |
+
+**측정값**: 📊 TBD.
+
+→ S3 가 "single-flight 만의 효과" 가장 명확.
+
+### MVC 통점 시각화 (Phase 2 완료 시 Grafana 캡처 첨부) 📅
 
 ```
-[ Baseline ]
+[ Baseline — Scenario 2 ]
 Tomcat busy thread:  ████████████████████  100% (200/200)
 External API calls:  ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲   sustained 100/sec
 P99:                 ━━━━━━━━━━━━━━━━━━━   850ms
 HTTP 503:            ▒▒▒▒                  burst on saturation
 
-[ Coalesced ]
+[ Coalesced — Scenario 2 ]
 Tomcat busy thread:  █                     5% (10/200)
-External API calls:  ▲                     1 (only owner)
-P99:                 ▔                     32ms
+External API calls:  ▲                     1 (only owner, then cache)
+P99:                 ▔                     5ms (cache hit)
 HTTP 503:            (none)
 ```
 
-→ **MVC paradigm 에선 thread pool 이 자원 병목. SingleFlight 가 thread pool 을 자유롭게 함.**
+→ **MVC paradigm 에선 thread pool 이 자원 병목. SingleFlight + cache 가 thread pool 을 자유롭게 함.**
 
 ---
 
-## Phase 3 Results — Multi-instance with Redis
+## Phase 3 Results — Multi-instance with Redis 📅
 
 > Multi-instance 환경에서 cross-process coalesce. **"분산 차원에서도 1번"**.
 
-### Scenario
+### Scenario 1 (Burst) — Multi-instance
 
-```
-Setup: 2 인스턴스 (mvc-demo-1, mvc-demo-2) behind nginx round-robin
-Backend: Redis SETNX + Pub/Sub
-Workload: 100 VU, 동일 key K, sustained 60s
-```
-
-### Expected Results
-
-| Metric | In-process (단일) | In-process (2 인스턴스) | Redis (2 인스턴스) |
+| Metric | InProcess 단일 🎯 | InProcess 2 인스턴스 🎯 | Redis 2 인스턴스 🎯 |
 |---|---|---|---|
 | 외부 호출 수 | 1 | 2 (인스턴스별 race) | **1** |
-| P99 latency | 32ms | 32ms | 38ms (Redis RTT) |
+| P99 latency | ~500ms | ~500ms | ~510ms (Redis RTT) |
 | Cross-instance coalesce | N/A | ❌ | ✅ |
-| Redis 의존성 | 없음 | 없음 | 있음 (SPOF) |
+
+**측정값**: 📊 TBD.
 
 → **In-process Map 만으로는 multi-instance 에서 race 발생. Redis layer 필요.**
 
-상세 trade-off: [adr/ADR-002-in-process-vs-redis-lock.md](adr/ADR-002-in-process-vs-redis-lock.md)
+상세 trade-off: [adr/ADR-002-in-process-vs-redis-lock.md](adr/ADR-002-in-process-vs-redis-lock.md) (Phase 3 시 작성)
 
 ---
 
-## Phase 6 Results — WebFlux Demo (Reactor)
+## Phase 6 Results — WebFlux Demo (Reactor) 📅
 
 > Reactive paradigm 의 thundering herd 표출. **"connection pool 보호"** 가 핵심.
 
-### Scenario
+### Scenario 1 (Burst) — WebFlux Baseline vs Coalesced
 
-```
-Endpoints:
-  GET /api/flux/baseline/expensive?key=K
-  GET /api/flux/coalesced/expensive?key=K
-
-Workload: 100 VU, 동일 key K, sustained 60s
-External: WebClient (non-blocking) 500ms 지연
-```
-
-### Expected Results
-
-| Metric | Baseline | Coalesced | Δ |
+| Metric | Baseline 🎯 | Coalesced 🎯 | Δ (가설) |
 |---|---|---|---|
-| 외부 호출 수 | ~6,000 | 1 | 6000× |
-| P50 latency | 500ms | 4ms | 125× |
-| P99 latency | 720ms | 28ms | **26×** |
+| 외부 호출 수 | 100 | 1 | 100× |
+| P99 latency | ~720ms | ~500ms | 1.4× |
 | WebClient connection (peak) | 100 | 1 | 100× |
 | Reactor scheduler pending | low | low | — |
-| Throughput (req/s) | ~140 | ~3,500 | 25× |
 
-### WebFlux 통점 vs MVC 통점 비교
+**측정값**: 📊 TBD.
+
+### Scenario 2 (Sustained + TTL) — WebFlux
+
+| Metric | Baseline 🎯 | Coalesced 🎯 |
+|---|---|---|
+| 외부 호출 수 (60s) | ~6,000 | ~1 |
+| P99 latency | 720ms | ~4ms |
+| Throughput (req/s) | ~140 | ~3,500 |
+
+**측정값**: 📊 TBD.
+
+### WebFlux vs MVC 통점 비교
 
 | 자원 | MVC 표출 | WebFlux 표출 |
 |---|---|---|
@@ -204,7 +285,31 @@ External: WebClient (non-blocking) 500ms 지연
 
 → **같은 thundering herd 인데 서로 다른 자원이 폭주.** 시니어급 깊이.
 
-상세 비교: [cross-paradigm/mvc-vs-webflux.md](cross-paradigm/mvc-vs-webflux.md)
+상세 비교: [cross-paradigm/mvc-vs-webflux.md](cross-paradigm/mvc-vs-webflux.md) (Phase 6 측정 후 채워짐)
+
+---
+
+## Production Incident — Anonymized Estimate 📂
+
+> 운영 incident ([INCIDENT.md](INCIDENT.md)) 의 익명화 추정값.
+> **합성 벤치 (Phase 2~6) 측정값과 다름.** 운영 환경 = 외부 SaaS + 실 customer + 프록시 풀 + 인증 + 변동 부하.
+
+### Operational Impact 📂
+
+| 항목 | Before (without single-flight) | After (with single-flight) |
+|---|---|---|
+| 외부 호출 (동시 20 요청) | 20 | 1 |
+| 다른 IP 할당 (80초 윈도우) | 10 | 1 |
+| 외부 시스템 보안 차단 | 발생 | 0 (24h 모니터링) |
+| 영향받은 customer (24h) | 5 명 | 0 명 |
+
+→ 이 수치는 **운영 환경 추정**. 합성 벤치로 정확히 재현되지 않음 (외부 환경 통제 불가).
+
+P99 850ms→32ms 같은 latency 수치는 **합성 벤치의 가설** (이 문서의 Scenario 2 표 참고). 운영 latency 는 외부 SaaS 응답 변동성 등 추가 변수.
+
+→ 면접 답변 시 라벨 분리 필수:
+- "운영 추정값" — 외부 호출 / IP 할당 / 차단 incident 수
+- "합성 벤치 가설 / 측정값" — P99 / Tomcat busy / connection pool
 
 ---
 
@@ -226,7 +331,7 @@ External: WebClient (non-blocking) 500ms 지연
 연간 CS 비용 회피 = 월 CS 비용 × 12
 ```
 
-이 incident 적용:
+이 incident 적용 (📂 anonymized estimate):
 - T_lock = 14분
 - N_monthly ≈ 150건 (24h 5건 × 30)
 - R_cs = X 원 (NDA)
@@ -244,7 +349,7 @@ External: WebClient (non-blocking) 500ms 지연
 월 매출 손실 위험 = 월 잠재 churn × LTV
 ```
 
-이 incident 적용:
+이 incident 적용 (📂 anonymized estimate):
 - P_churn ≈ 5% (lock 후 24h 미접속)
 - N_monthly = 150
 - 월 잠재 churn = 7.5명
@@ -274,7 +379,7 @@ External: WebClient (non-blocking) 500ms 지연
   → 6개월 위험 = P_blacklist × downtime cost
 ```
 
-### 합산 회피 가치
+### 합산 회피 가치 📂
 
 ```
 연간 회피 ≈ (CS 비용) + (churn 위험) + (평판 multiplier) + (compliance 위험)
@@ -294,33 +399,31 @@ External: WebClient (non-blocking) 500ms 지연
 
 ---
 
-## Reproducing the Benchmark
+## Reproducing the Benchmark 📅
 
-본 repo 의 portfolio 측정은 **누구나 재현 가능**.
+> 본 repo 의 측정 자동화는 **Phase 별 진행 시 채워짐**. 현재는 예정 명령.
+> 실제 동작은 [benchmark/](../benchmark/) 와 [infra/](../infra/) 의 Phase 별 placeholder README 참고.
 
 ```bash
-# 1. 인프라
+# Phase 2 완료 후 동작 예정:
 cd infra && docker-compose up -d
+cd ../benchmark && bash scripts/run-mvc.sh
 
-# 2. MVC Phase 측정
-cd ../benchmark
-bash scripts/run-mvc.sh
-
-# 3. WebFlux Phase 측정
-bash scripts/run-webflux.sh
-
-# 4. Multi-instance Phase 측정
+# Phase 3 완료 후:
 bash scripts/run-redis-multi.sh
 
-# 5. 결과 비교
+# Phase 6 완료 후:
+bash scripts/run-webflux.sh
+
+# 결과 비교:
 open results/<날짜>/comparison.md
 ```
 
-→ 면접관이 본인 환경에서도 같은 측정 가능. 신뢰성 시그널.
+→ 면접관이 본인 환경에서도 같은 측정 가능 — **단 Phase 진행 후**. 신뢰성 시그널.
 
 ---
 
-## Open Questions / TODO
+## Open Questions / TODO 📅
 
 - [ ] Phase 1: 단위 테스트 시간 측정 (microbenchmark)
 - [ ] Phase 2: 실제 측정값 채우기 + Grafana 캡처
@@ -335,8 +438,8 @@ open results/<날짜>/comparison.md
 
 ## Related
 
-- [STORY.md](STORY.md) — narrative arc
-- [INCIDENT.md](INCIDENT.md) — Customer A timeline
+- [STORY.md](STORY.md) — narrative arc (운영 추정값 명시)
+- [INCIDENT.md](INCIDENT.md) — Customer A timeline (📂 운영 데이터 anonymized)
 - [DESIGN.md](DESIGN.md) — Hexagonal + Decorator 설계
-- [INTERVIEW.md](INTERVIEW.md) — 답변 스크립트 (비즈니스 임팩트 답변 cite)
+- [INTERVIEW.md](INTERVIEW.md) — 답변 스크립트 (라벨 분리 적용)
 - portfolio-docs/STRATEGY.md — 공통 벤치마크 규약
