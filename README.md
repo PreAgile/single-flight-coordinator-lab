@@ -4,8 +4,8 @@
 > Hexagonal Architecture (Port/Adapter) + Decorator Stack 으로 운영 안전망까지 통합.
 > **MVC / WebFlux / Virtual Threads / Coroutines 4 paradigm 에서 같은 문제의 표출 방식 비교** 가 진짜 어필 포인트.
 
-[![Status](https://img.shields.io/badge/status-Phase%201%20WIP-yellow)]()
-[![Java](https://img.shields.io/badge/Java-21-orange)]()
+[![Status](https://img.shields.io/badge/status-Phase%201%20Code%20Complete-blue)]()
+[![Java](https://img.shields.io/badge/Java-21+-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
@@ -55,26 +55,36 @@
 
 ---
 
-## 빠른 시작 (Phase 2 완료 후)
+## 빠른 시작
+
+### Phase 1 — coordinator-core 단위 테스트 (현재 상태)
 
 ```bash
-# 1. 인프라 띄우기
+# 1. 첫 실행 — Gradle Wrapper 부트스트랩 (한 번만)
+#    (gradle 8.x 가 시스템에 설치돼있어야 함. 없으면 `brew install gradle` 또는 SDKMAN)
+gradle wrapper
+
+# 2. 단위 테스트 실행
+./gradlew :coordinator-core:test
+
+# 결과 예상: 28 tests passed (InProcess 8 + Deadline 4 + Capacity 4
+#                              + Heartbeat 3 + Telemetry 5 + FullChain 4)
+```
+
+### Phase 2 완료 후 — MVC Demo + 측정
+
+```bash
 cd infra && docker-compose up -d
-
-# 2. MVC demo 기동
 ./gradlew :mvc-demo:bootRun
-
-# 3. 부하 테스트
-cd benchmark && k6 run k6/mvc-baseline.js
+cd ../benchmark && k6 run k6/mvc-baseline.js
 k6 run k6/mvc-coalesced-inprocess.js
-
-# 4. Grafana 시각화
 open http://localhost:3000  # admin/admin
 ```
 
-WebFlux demo (Phase 6 완료 후):
+### Phase 6 완료 후 — WebFlux Demo
+
 ```bash
-./gradlew :webflux-demo:bootRun     # 별도 port
+./gradlew :webflux-demo:bootRun
 k6 run k6/webflux-baseline.js
 k6 run k6/webflux-coalesced.js
 ```
@@ -120,7 +130,7 @@ single-flight-coordinator-lab/
 
 | Phase | 제목 | Issue | Milestone | 상태 |
 |---|---|---|---|---|
-| 1 | coordinator-core (Pure Java, no Spring) | [#2](https://github.com/PreAgile/single-flight-coordinator-lab/issues/2) | v0.1 | 🔜 |
+| 1 | coordinator-core (Pure Java, no Spring) | [#2](https://github.com/PreAgile/single-flight-coordinator-lab/issues/2) | v0.1 | 🚧 코드 작성됨 (PR review 중) |
 | 2 | mvc-demo (Tomcat thread pool 통점) | [#3](https://github.com/PreAgile/single-flight-coordinator-lab/issues/3) | v0.5 | 🔜 |
 | 3 | redis-adapter (multi-instance) | [#4](https://github.com/PreAgile/single-flight-coordinator-lab/issues/4) | v0.6 | 🔜 |
 | 4 | TS reference + cross-language | [#5](https://github.com/PreAgile/single-flight-coordinator-lab/issues/5) | v0.7 | 🔜 |
