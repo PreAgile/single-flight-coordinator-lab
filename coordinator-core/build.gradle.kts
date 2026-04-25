@@ -13,9 +13,13 @@ dependencies {
     // Logging facade
     implementation("org.slf4j:slf4j-api:2.0.9")
 
-    // 테스트
+    // 테스트 — JUnit BOM 으로 jupiter + platform 버전 정합성 보장.
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    // Gradle 9+ 는 platform-launcher 를 자동으로 추가하지 않음 (strict 화).
+    // Gradle 8.x 에선 자동 감지였으나 9.x 부터 명시적 선언 필수.
+    // 누락 시: "Failed to load JUnit Platform" 에러.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.slf4j:slf4j-simple:2.0.9")
