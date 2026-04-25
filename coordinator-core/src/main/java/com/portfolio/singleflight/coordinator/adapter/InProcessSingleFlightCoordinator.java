@@ -88,7 +88,9 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
                 existing.waiterCount.incrementAndGet();
                 @SuppressWarnings("unchecked")
                 InflightRecord<T> typed = (InflightRecord<T>) existing;
-                resultRef.set(typed.future);
+                // Hand each caller an independent copy so one caller cancelling
+                // their future cannot kill the shared operation or other waiters.
+                resultRef.set(typed.future.copy());
                 return existing;
             }
 
@@ -106,7 +108,9 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
 
             InflightRecord<T> record = new InflightRecord<>(
                     key, future, System.currentTimeMillis(), new AtomicInteger(1));
-            resultRef.set(future);
+            // Caller gets an independent copy (cancel isolation); the map and
+            // the cleanup hook keep the original for identity-based eviction.
+            resultRef.set(future.copy());
             newOwnerRef.set(future);
             return record;
         });
