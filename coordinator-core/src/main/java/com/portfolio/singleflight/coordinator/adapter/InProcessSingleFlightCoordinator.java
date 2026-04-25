@@ -68,6 +68,7 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
 
         int maxWaiters = options.maxWaiters().orElse(Integer.MAX_VALUE);
         AtomicReference<CompletableFuture<T>> resultRef = new AtomicReference<>();
+        AtomicReference<CompletableFuture<T>> newOwnerRef = new AtomicReference<>();
 
         inflight.compute(key, (k, existing) -> {
             if (existing != null) {
@@ -103,18 +104,24 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
                 future = CompletableFuture.failedFuture(t);
             }
 
-            // Cleanup hook — remove this record from the map when settled.
-            // We use a second `compute` guarded by identity check, so we don't
-            // accidentally evict a successor entry that took this slot after
-            // a force-release.
-            CompletableFuture<T> ownerFuture = future;
-            ownerFuture.whenComplete((v, e) -> evictIfStillOwner(key, ownerFuture));
-
             InflightRecord<T> record = new InflightRecord<>(
-                    key, ownerFuture, System.currentTimeMillis(), new AtomicInteger(1));
-            resultRef.set(ownerFuture);
+                    key, future, System.currentTimeMillis(), new AtomicInteger(1));
+            resultRef.set(future);
+            newOwnerRef.set(future);
             return record;
         });
+
+        // Register the cleanup hook AFTER the record is safely in the map.
+        // If we registered inside the compute block, an already-completed
+        // future (e.g. completedFuture / failedFuture from a sync supplier)
+        // would fire whenComplete immediately on the registering thread —
+        // before the record was inserted — so the evict would be a no-op
+        // and the record would leak. Registering here guarantees the record
+        // is visible when the hook runs.
+        CompletableFuture<T> newOwner = newOwnerRef.get();
+        if (newOwner != null) {
+            newOwner.whenComplete((v, e) -> evictIfStillOwner(key, newOwner));
+        }
 
         CompletableFuture<T> result = resultRef.get();
         if (result == null) {
