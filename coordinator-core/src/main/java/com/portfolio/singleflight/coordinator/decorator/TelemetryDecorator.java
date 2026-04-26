@@ -1,15 +1,5 @@
 package com.portfolio.singleflight.coordinator.decorator;
 
-import com.portfolio.singleflight.coordinator.InflightEntry;
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.exception.CongestionException;
-import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
-import com.portfolio.singleflight.coordinator.exception.ForceReleasedException;
-import com.portfolio.singleflight.coordinator.observability.MetricSink;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -17,6 +7,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.portfolio.singleflight.coordinator.InflightEntry;
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.SingleFlightOptions;
+import com.portfolio.singleflight.coordinator.exception.CongestionException;
+import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
+import com.portfolio.singleflight.coordinator.exception.ForceReleasedException;
+import com.portfolio.singleflight.coordinator.observability.MetricSink;
 
 /**
  * Telemetry decorator — outermost layer in the canonical stack.

@@ -1,18 +1,19 @@
 package com.portfolio.singleflight.coordinator.decorator;
 
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.adapter.InProcessSingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.SingleFlightOptions;
+import com.portfolio.singleflight.coordinator.adapter.InProcessSingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
 
 class DeadlineDecoratorTest {
 

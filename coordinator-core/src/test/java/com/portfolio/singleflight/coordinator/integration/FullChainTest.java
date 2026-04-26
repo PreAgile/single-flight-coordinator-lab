@@ -1,5 +1,21 @@
 package com.portfolio.singleflight.coordinator.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
 import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
 import com.portfolio.singleflight.coordinator.SingleFlightOptions;
 import com.portfolio.singleflight.coordinator.adapter.InProcessSingleFlightCoordinator;
@@ -10,21 +26,6 @@ import com.portfolio.singleflight.coordinator.decorator.TelemetryDecorator;
 import com.portfolio.singleflight.coordinator.exception.CongestionException;
 import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
 import com.portfolio.singleflight.coordinator.observability.MetricSink;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 /**
  * Integration tests for the full 5-layer decorator chain:

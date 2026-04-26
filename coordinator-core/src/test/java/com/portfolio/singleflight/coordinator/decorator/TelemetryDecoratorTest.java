@@ -1,13 +1,7 @@
 package com.portfolio.singleflight.coordinator.decorator;
 
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.adapter.InProcessSingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.exception.CongestionException;
-import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
-import com.portfolio.singleflight.coordinator.observability.MetricSink;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +11,14 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.adapter.InProcessSingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.exception.CongestionException;
+import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
+import com.portfolio.singleflight.coordinator.observability.MetricSink;
 
 class TelemetryDecoratorTest {
 

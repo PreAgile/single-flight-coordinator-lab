@@ -1,11 +1,5 @@
 package com.portfolio.singleflight.coordinator.adapter;
 
-import com.portfolio.singleflight.coordinator.InflightEntry;
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.exception.CongestionException;
-import com.portfolio.singleflight.coordinator.exception.ForceReleasedException;
-
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -17,6 +11,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+
+import com.portfolio.singleflight.coordinator.InflightEntry;
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.SingleFlightOptions;
+import com.portfolio.singleflight.coordinator.exception.CongestionException;
+import com.portfolio.singleflight.coordinator.exception.ForceReleasedException;
 
 /**
  * In-process Map-based coordinator (Issue #2 / Phase 1).
