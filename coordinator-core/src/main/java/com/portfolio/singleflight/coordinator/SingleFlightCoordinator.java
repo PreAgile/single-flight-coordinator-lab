@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Per-key, once-at-a-time async execution with coalesced results.
  *
@@ -71,8 +73,10 @@ public interface SingleFlightCoordinator {
      * cancellation discussion).
      *
      * @param key    coalescing key to release
-     * @param reason human-readable reason for telemetry / logs
+     * @param reason human-readable reason for telemetry / logs; may be
+     *               {@code null} when no contextual reason is available
+     *               (e.g. shutdown sweepers)
      * @return future that completes when the release signal has been recorded
      */
-    CompletableFuture<Void> forceRelease(String key, String reason);
+    CompletableFuture<Void> forceRelease(String key, @Nullable String reason);
 }
