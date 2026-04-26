@@ -141,6 +141,51 @@ class InProcessSingleFlightCoordinatorTest {
         }
 
         @Test
+        @DisplayName("fast-completion supplier에서 동시 호출도 결과 일관성과 누수 없는 정리를 보장한다 — race window는 의도된 시멘틱")
+        void fastCompletionConcurrentCallsBehaveCorrectly() throws Exception {
+            // supplier가 이미 완료된 future를 돌려주는 경우(캐시 히트, 동기 결정 등)에도
+            // 동시 호출 시나리오가 깨지지 않음을 명세한다. record 삽입과 whenComplete
+            // 등록 사이의 race window는 SingleFlight 패턴의 의도된 동작 — 그 윈도우에
+            // 들어온 호출자는 직전 owner와 coalesce되어 같은 결과를 받고, 윈도우를
+            // 벗어난 호출자는 새 owner로 fresh하게 시작한다. 둘 다 정상.
+            //
+            // 이 테스트는 미래의 누군가가 race window를 "버그"로 오인해
+            // existing.future.isDone() 검사로 강제 new-owner 로직을 도입하면
+            // (= fast-completion thundering herd 재현) 깨지도록 설계됐다.
+            AtomicInteger invocations = new AtomicInteger();
+            int callerCount = 50;
+
+            ExecutorService executor = Executors.newFixedThreadPool(callerCount);
+            CountDownLatch ready = new CountDownLatch(callerCount);
+            List<CompletableFuture<String>> results = new ArrayList<>();
+
+            try {
+                for (int i = 0; i < callerCount; i++) {
+                    results.add(CompletableFuture.supplyAsync(() -> {
+                        ready.countDown();
+                        return coordinator.execute(KEY, () -> {
+                            invocations.incrementAndGet();
+                            return CompletableFuture.completedFuture("v");
+                        });
+                    }, executor).thenCompose(f -> f));
+                }
+                ready.await();
+
+                for (CompletableFuture<String> r : results) {
+                    assertThat(r.get(2, TimeUnit.SECONDS)).isEqualTo("v");
+                }
+
+                assertThat(invocations.get())
+                        .as("supplier 호출 수는 1 이상 호출자 수 이하 — 정확한 값은 race window 타이밍이 결정")
+                        .isBetween(1, callerCount);
+            } finally {
+                executor.shutdownNow();
+            }
+
+            awaitNoInflight();
+        }
+
+        @Test
         @DisplayName("앞 작업이 끝난 뒤 들어온 호출은 새 owner로 재실행된다 — 시간이 안 겹치면 코알레싱 없음")
         void sequentialCallsRestartOwnerEachTime() throws Exception {
             AtomicInteger invocations = new AtomicInteger();
