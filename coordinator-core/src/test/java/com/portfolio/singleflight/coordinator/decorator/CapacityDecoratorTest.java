@@ -11,9 +11,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -97,6 +99,21 @@ class CapacityDecoratorTest {
 
             hanging.complete("done");
         }
+
+        @Test
+        @DisplayName("default=2이고 caller가 옵션 미지정이면 inner에 전달되는 effective options.maxWaiters는 2다 — option injection 직접 검증")
+        void defaultCapIsInjectedIntoEffectiveOptions() {
+            // 통합 검증(거부 발생 → 추론)이 아니라 inner로 흘러가는 옵션 자체를 확인.
+            // 데코레이터의 본질적 책임("default 값을 effective options에 주입")이
+            // 결과 동작과 분리되어 명세된다.
+            RecordingCoordinator recorder = new RecordingCoordinator();
+            SingleFlightCoordinator coord = new CapacityDecorator(recorder, 2);
+
+            coord.execute(KEY, () -> CompletableFuture.completedFuture("v"));
+
+            assertThat(recorder.lastOptions).isNotNull();
+            assertThat(recorder.lastOptions.maxWaiters()).hasValue(2);
+        }
     }
 
     // ====================================================================
@@ -107,8 +124,8 @@ class CapacityDecoratorTest {
     class OptionOverride {
 
         @Test
-        @DisplayName("default=100이지만 caller가 maxWaiters=1로 지정하면 cap은 1로 적용되어 owner 직후 거부된다")
-        void callerOptionTakesPrecedenceOverDefault() {
+        @DisplayName("default=100이지만 caller가 maxWaiters=1로 지정하면 cap은 1로 적용되어 owner 직후 거부된다 (strict 방향)")
+        void callerOptionCanLowerBelowDefault() {
             SingleFlightCoordinator coord = new CapacityDecorator(inner, 100);
             SingleFlightOptions tightOpts = SingleFlightOptions.builder().maxWaiters(1).build();
 
@@ -118,6 +135,27 @@ class CapacityDecoratorTest {
             awaitSingleInflight();
 
             assertThatThrownBy(() -> coord.execute(KEY, () -> hanging, tightOpts))
+                    .isInstanceOf(CongestionException.class);
+
+            hanging.complete("done");
+        }
+
+        @Test
+        @DisplayName("default=1이지만 caller가 maxWaiters=3을 지정하면 cap은 3으로 올라가 owner+waiter 2명까지 매달리고 4번째에서 거부된다 (looser 방향)")
+        void callerOptionCanRaiseAboveDefault() {
+            // "옵션 우선"이 강하게도(=낮춤) 약하게도(=올림) 모두 작동함을 명세.
+            // "option < default일 때만 option 우선" 같은 잘못된 분기를 막는다.
+            SingleFlightCoordinator coord = new CapacityDecorator(inner, 1);
+            SingleFlightOptions looserOpts = SingleFlightOptions.builder().maxWaiters(3).build();
+
+            CompletableFuture<String> hanging = new CompletableFuture<>();
+            coord.execute(KEY, () -> hanging, looserOpts);
+            coord.execute(KEY, () -> hanging, looserOpts);
+            coord.execute(KEY, () -> hanging, looserOpts);
+
+            awaitSingleInflightWithWaiterCount(3);
+
+            assertThatThrownBy(() -> coord.execute(KEY, () -> hanging, looserOpts))
                     .isInstanceOf(CongestionException.class);
 
             hanging.complete("done");
@@ -157,6 +195,25 @@ class CapacityDecoratorTest {
             }
 
             awaitSingleInflightWithWaiterCount(50);
+
+            hanging.complete("done");
+        }
+
+        @Test
+        @DisplayName("default=0(비활성)여도 caller가 명시한 options.maxWaiters는 그대로 적용된다 — 비활성 모드는 default 무효화일 뿐 caller 옵션 무시가 아니다")
+        void disabledDefaultStillHonorsCallerOption() {
+            // default <= 0 분기는 options를 그대로 inner에 전달한다.
+            // "disabled면 옵션도 무시" 같은 잘못된 회귀를 차단.
+            SingleFlightCoordinator coord = new CapacityDecorator(inner, 0);
+            SingleFlightOptions tightOpts = SingleFlightOptions.builder().maxWaiters(1).build();
+
+            CompletableFuture<String> hanging = new CompletableFuture<>();
+            coord.execute(KEY, () -> hanging, tightOpts);
+
+            awaitSingleInflight();
+
+            assertThatThrownBy(() -> coord.execute(KEY, () -> hanging, tightOpts))
+                    .isInstanceOf(CongestionException.class);
 
             hanging.complete("done");
         }
@@ -332,5 +389,35 @@ class CapacityDecoratorTest {
                     var state = inner.getInflightState();
                     return state.size() == 1 && state.get(0).waiterCount() == waiterCount;
                 });
+    }
+
+    /**
+     * Test double — inner로 전달된 effective options를 직접 관찰하기 위한 헬퍼.
+     * thin decorator의 본질적 책임("options 변형 → 위임")을 결과 동작과 분리해
+     * 명세할 때 사용한다.
+     */
+    private static final class RecordingCoordinator implements SingleFlightCoordinator {
+        SingleFlightOptions lastOptions;
+        String lastKey;
+
+        @Override
+        public <T> CompletableFuture<T> execute(
+                String key,
+                Supplier<CompletableFuture<T>> operation,
+                SingleFlightOptions options) {
+            this.lastKey = key;
+            this.lastOptions = options;
+            return CompletableFuture.<T>completedFuture(null);
+        }
+
+        @Override
+        public List<InflightEntry> getInflightState() {
+            return List.of();
+        }
+
+        @Override
+        public CompletableFuture<Void> forceRelease(String key, String reason) {
+            return CompletableFuture.completedFuture(null);
+        }
     }
 }
