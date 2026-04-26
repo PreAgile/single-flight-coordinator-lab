@@ -107,7 +107,7 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
             }
 
             InflightRecord<T> record = new InflightRecord<>(
-                    key, future, System.currentTimeMillis(), new AtomicInteger(1));
+                    future, System.currentTimeMillis(), new AtomicInteger(1));
             // Caller gets an independent copy (cancel isolation); the map and
             // the cleanup hook keep the original for identity-based eviction.
             resultRef.set(future.copy());
@@ -124,7 +124,11 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
         // is visible when the hook runs.
         CompletableFuture<T> newOwner = newOwnerRef.get();
         if (newOwner != null) {
-            newOwner.whenComplete((v, e) -> evictIfStillOwner(key, newOwner));
+            // The returned stage from whenComplete is intentionally discarded —
+            // the registration itself is the side effect we want, and there's
+            // no further chain to attach. `var unused` makes that intent
+            // explicit for ErrorProne's FutureReturnValueIgnored check.
+            var unused = newOwner.whenComplete((v, e) -> evictIfStillOwner(key, newOwner));
         }
 
         CompletableFuture<T> result = resultRef.get();
@@ -178,13 +182,11 @@ public final class InProcessSingleFlightCoordinator implements SingleFlightCoord
      * {@link #getInflightState()}).
      */
     private static final class InflightRecord<T> {
-        final String key;
         final CompletableFuture<T> future;
         final long startedAt;
         final AtomicInteger waiterCount;
 
-        InflightRecord(String key, CompletableFuture<T> future, long startedAt, AtomicInteger waiterCount) {
-            this.key = key;
+        InflightRecord(CompletableFuture<T> future, long startedAt, AtomicInteger waiterCount) {
             this.future = future;
             this.startedAt = startedAt;
             this.waiterCount = waiterCount;
