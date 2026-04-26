@@ -53,6 +53,7 @@ public final class CapacityDecorator implements SingleFlightCoordinator {
             String key,
             Supplier<CompletableFuture<T>> operation,
             SingleFlightOptions options) {
+        Objects.requireNonNull(options, "options");
         SingleFlightOptions effective = defaultMaxWaiters > 0
                 ? options.orDefaultMaxWaiters(defaultMaxWaiters)
                 : options;
