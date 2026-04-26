@@ -1,12 +1,5 @@
 package com.portfolio.singleflight.coordinator.decorator;
 
-import com.portfolio.singleflight.coordinator.InflightEntry;
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.observability.MetricSink;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +11,14 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.portfolio.singleflight.coordinator.InflightEntry;
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.SingleFlightOptions;
+import com.portfolio.singleflight.coordinator.observability.MetricSink;
 
 /**
  * Heartbeat decorator — periodically scans inflight entries and warns about

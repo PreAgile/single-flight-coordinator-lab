@@ -1,16 +1,16 @@
 package com.portfolio.singleflight.coordinator.decorator;
 
-import com.portfolio.singleflight.coordinator.InflightEntry;
-import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
-import com.portfolio.singleflight.coordinator.SingleFlightOptions;
-import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+
+import com.portfolio.singleflight.coordinator.InflightEntry;
+import com.portfolio.singleflight.coordinator.SingleFlightCoordinator;
+import com.portfolio.singleflight.coordinator.SingleFlightOptions;
+import com.portfolio.singleflight.coordinator.exception.DeadlineExceededException;
 
 /**
  * Deadline decorator — wraps the operation with a wall-clock timeout and
