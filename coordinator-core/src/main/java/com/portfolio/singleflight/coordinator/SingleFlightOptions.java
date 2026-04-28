@@ -1,5 +1,6 @@
 package com.portfolio.singleflight.coordinator;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -28,16 +29,9 @@ public record SingleFlightOptions(
         Optional<String> telemetryTag) {
 
     public SingleFlightOptions {
-        // Defensive null checks for record canonical constructor.
-        if (deadlineMs == null) {
-            throw new NullPointerException("deadlineMs (use OptionalLong.empty())");
-        }
-        if (maxWaiters == null) {
-            throw new NullPointerException("maxWaiters (use OptionalInt.empty())");
-        }
-        if (telemetryTag == null) {
-            throw new NullPointerException("telemetryTag (use Optional.empty())");
-        }
+        Objects.requireNonNull(deadlineMs, "deadlineMs (use OptionalLong.empty())");
+        Objects.requireNonNull(maxWaiters, "maxWaiters (use OptionalInt.empty())");
+        Objects.requireNonNull(telemetryTag, "telemetryTag (use Optional.empty())");
     }
 
     /** Empty options — every field is unset. Decorators apply defaults. */
