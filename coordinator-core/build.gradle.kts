@@ -7,6 +7,12 @@
 // (Prometheus, Datadog 등) 는 consumer 가 결정.
 
 dependencies {
+    // Nullability annotations — JSpecify is the modern Java standard
+    // (replaces JSR-305 / FindBugs / Checker / JetBrains variants).
+    // Annotations are RetentionPolicy.CLASS so they live in bytecode for
+    // tooling (NullAway, IDE) without runtime overhead.
+    implementation("org.jspecify:jspecify:1.0.0")
+
     // 메트릭 인터페이스 — Spring 무관, 표준 라이브러리
     implementation("io.micrometer:micrometer-core:1.12.0")
 
