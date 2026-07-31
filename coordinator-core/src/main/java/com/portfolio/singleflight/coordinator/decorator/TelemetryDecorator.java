@@ -81,7 +81,7 @@ public final class TelemetryDecorator implements SingleFlightCoordinator {
         String status = classifyStatus(error);
         Map<String, String> tags = Map.of("status", status, "tag", tag);
 
-        metrics.recordHistogram("singleflight.owner_duration_ms", durationMs, tags);
+        metrics.recordHistogram("singleflight.owner_duration_ms", (double) durationMs, tags);
 
         if (error == null) {
             log.info(
